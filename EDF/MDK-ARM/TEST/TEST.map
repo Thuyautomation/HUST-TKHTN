@@ -3803,7 +3803,7 @@ Image component sizes
       Code (inc. data)   RO Data    RW Data    ZI Data      Debug   Object Name
 
        860          0          4          0          0       5929   lcd.o
-      2770        236         70         91        378      16096   main.o
+      2770        236         70         91        378      16117   main.o
         64         26        236          0       1536        772   startup_stm32f103xb.o
        188          0          0          8          4       5720   stm32f1xx_hal.o
        200          0          0          0          0       8478   stm32f1xx_hal_cortex.o
@@ -3818,7 +3818,7 @@ Image component sizes
          2          0         24          4          0       1600   system_stm32f1xx.o
 
     ----------------------------------------------------------------------
-     10484        284        384        104       1920     180437   Object Totals
+     10484        284        384        104       1920     180458   Object Totals
          0          0         32          0          0          0   (incl. Generated)
        100          0          0          1          2          0   (incl. Padding)
 
@@ -3922,8 +3922,8 @@ Image component sizes
 
       Code (inc. data)   RO Data    RW Data    ZI Data      Debug   
 
-     19722        638        890        104       2016     182313   Grand Totals
-     19722        638        890        104       2016     182313   ELF Image Totals
+     19722        638        890        104       2016     182334   Grand Totals
+     19722        638        890        104       2016     182334   ELF Image Totals
      19722        638        890        104          0          0   ROM Totals
 
 ==============================================================================
