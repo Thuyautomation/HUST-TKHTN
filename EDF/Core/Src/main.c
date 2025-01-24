@@ -21,24 +21,45 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "lcd.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#include "lcd.h"
-#include <stdio.h>
-#include <string.h>
+typedef enum {
+    STATE_OFF,
+    STATE_ON,
+    STATE_START,
+    STATE_RESTART,
+    STATE_STOP,
+} SystemState;
+
+typedef enum {
+    DISPLAY_CELSIUS, // Hiển thị nhiệt độ C
+    DISPLAY_FAHRENHEIT // Hiển thị nhiệt độ F
+} DisplayMode;
+
+typedef struct {
+    void (*task)(void);  // Con trỏ hàm thực hiện tác vụ
+    uint32_t period;     // Chu kỳ của tác vụ (ms)
+    uint32_t elapsedTime; // Thời gian đã trôi qua kể từ lần thực hiện cuối cùng
+    uint32_t deadline;   // Thời hạn hoàn thành tác vụ (EDF)
+    uint8_t priority;    // Ưu tiên của tác vụ (càng nhỏ càng cao)
+    const char* name;    // Tên task
+} Task;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define DHT11_PORT GPIOB
+#define DHT11_PIN GPIO_PIN_11
+#define NUM_TASKS 4
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -47,6 +68,9 @@ TIM_HandleTypeDef htim4;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+SystemState systemState = STATE_OFF; // Khởi tạo trạng thái ban đầu là OFF
+DisplayMode displayMode = DISPLAY_CELSIUS;
+
 uint16_t Count;
 uint8_t RH1, RH2, TC1, TC2, SUM, CHECK;
 uint32_t pMillis, cMillis;
@@ -57,23 +81,6 @@ float RH = 0;
 uint8_t rx_data; // Biến lưu dữ liệu nhận được từ UART
 char rx_buffer[100]; // Buffer để lưu chuỗi lệnh
 uint8_t rx_index = 0; // Chỉ số của buffer
-
-
-
-typedef enum {
-    DISPLAY_CELSIUS, // Hiển thị nhiệt độ C
-    DISPLAY_FAHRENHEIT // Hiển thị nhiệt độ F
-} DisplayMode;
-
-DisplayMode displayMode = DISPLAY_CELSIUS;
-
-typedef struct {
-    void (*task)(void);  // Con trỏ hàm thực hiện tác vụ
-    uint32_t period;     // Chu kỳ của tác vụ (ms)
-    uint32_t elapsedTime; // Thời gian đã trôi qua kể từ lần thực hiện cuối cùng
-    uint8_t priority;    // Ưu tiên của tác vụ (càng nhỏ càng cao)
-    const char* name;    // Tên task (thêm trường này)
-} Task;
 
 uint8_t led_segments[] = {
     0xC0,  // 0
@@ -88,6 +95,19 @@ uint8_t led_segments[] = {
     0x90   // 9
 };
 
+Lcd_HandleTypeDef lcd;
+void displayLED(void);
+void readDHT11(void);
+void displayLCD(void);
+void sendUART(void);
+Task tasks[] = {
+    {displayLED, 10, 0, 0, 1, "LED"},      // Tác vụ hiển thị LED 7 thanh, chu kỳ 10 ms
+    {readDHT11, 1000, 0, 0, 2, "DHT11"},   // Tác vụ đọc cảm biến DHT11, chu kỳ 1 giây
+    {displayLCD, 2000, 0, 0, 3, "LCD"},    // Tác vụ hiển thị LCD, chu kỳ 2 giây
+    {sendUART, 5000, 0, 0, 4, "UART"}      // Tác vụ gửi dữ liệu qua UART, chu kỳ 5 giây
+};
+
+volatile uint32_t tick = 0;  // Global tick counter
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -97,96 +117,87 @@ static void MX_TIM4_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-
-volatile uint32_t tick = 0;  // Global tick counter
-
+void microDelay(uint16_t delay);
+uint8_t DHT11_Start(void);
+uint8_t DHT11_Read(void);
+void displayTemperatureOnLCD(Lcd_HandleTypeDef *lcd, float temperatureC, float temperatureF, float humidity);
+void sendDataViaUART(UART_HandleTypeDef *huart, float temperature, float humidity);
+void displayDigit(uint8_t digit, uint8_t position);
+void displayTemperatureOnLED(float temperature);
+void display_dot_on_D3(void);
+void clear_dot_on_D3(void);
+void displayLED(void);
+void readDHT11(void);
+void displayLCD(void);
+void sendUART(void);
+void processCommand(char* command);
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
+void scheduleTasks(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define DHT11_PORT GPIOB
-#define DHT11_PIN GPIO_PIN_11
-
-
-int intPart;           
-int firstDigit;        
-int secondDigit;       
-int decimalPart;      
-int thirdDigit;       
-int fourthDigit; 
-
-
-void floatToString(float value, char *str){
-    sprintf(str, "%.2f", value);  
+void microDelay(uint16_t delay) {
+    __HAL_TIM_SET_COUNTER(&htim4, 0);
+    while (__HAL_TIM_GET_COUNTER(&htim4) < delay);
 }
 
-void microDelay (uint16_t delay){
-  __HAL_TIM_SET_COUNTER(&htim4, 0);
-  while (__HAL_TIM_GET_COUNTER(&htim4) < delay);
-}
-
-
-uint8_t DHT11_Start (void){
-  uint8_t Response = 0;
-  GPIO_InitTypeDef GPIO_InitStructPrivate = {0};
-  GPIO_InitStructPrivate.Pin = DHT11_PIN;
-  GPIO_InitStructPrivate.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStructPrivate.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStructPrivate.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(DHT11_PORT, &GPIO_InitStructPrivate); // set the pin as output
-  HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, GPIO_PIN_RESET);   // pull the pin low
-  microDelay (20000);   // wait for 20000us
-  HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, GPIO_PIN_SET);   // pull the pin high
-  microDelay (30);   // wait for 30us
-  GPIO_InitStructPrivate.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStructPrivate.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(DHT11_PORT, &GPIO_InitStructPrivate); // set the pin as input
-  microDelay (40);
-  if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))
-  {
-    microDelay (80);
-    if ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN))) Response = 1;
-  }
-  pMillis = HAL_GetTick();
-  cMillis = HAL_GetTick();
-  while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)) && pMillis + 2 > cMillis)
-  {
-    cMillis = HAL_GetTick();
-  }
-  return Response;
-}
-
-uint8_t DHT11_Read (void){
-  uint8_t a,b;
-  for (a=0;a<8;a++)
-  {
+uint8_t DHT11_Start(void) {
+    uint8_t Response = 0;
+    GPIO_InitTypeDef GPIO_InitStructPrivate = {0};
+    GPIO_InitStructPrivate.Pin = DHT11_PIN;
+    GPIO_InitStructPrivate.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStructPrivate.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStructPrivate.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(DHT11_PORT, &GPIO_InitStructPrivate); // set the pin as output
+    HAL_GPIO_WritePin(DHT11_PORT, DHT11_PIN, GPIO_PIN_RESET);   // pull the pin low
+    microDelay(20000);   // wait for 20000us
+    HAL_GPIO_WritePin(DHT11_PORT, DHT11_PIN, GPIO_PIN_SET);   // pull the pin high
+    microDelay(30);   // wait for 30us
+    GPIO_InitStructPrivate.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStructPrivate.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(DHT11_PORT, &GPIO_InitStructPrivate); // set the pin as input
+    microDelay(40);
+    if (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN))) {
+        microDelay(80);
+        if ((HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN))) Response = 1;
+    }
     pMillis = HAL_GetTick();
     cMillis = HAL_GetTick();
-    while (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)) && pMillis + 2 > cMillis)
-    {  // wait for the pin to go high
-      cMillis = HAL_GetTick();
+    while ((HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)) && pMillis + 2 > cMillis) {
+        cMillis = HAL_GetTick();
     }
-    microDelay (40);   // wait for 40 us
-    if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))   // if the pin is low
-      b&= ~(1<<(7-a));
-    else
-      b|= (1<<(7-a));
-    pMillis = HAL_GetTick();
-    cMillis = HAL_GetTick();
-    while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)) && pMillis + 2 > cMillis)
-    {  // wait for the pin to go low
-      cMillis = HAL_GetTick();
+    return Response;
+}
+
+uint8_t DHT11_Read(void) {
+    uint8_t a, b;
+    for (a = 0; a < 8; a++) {
+        pMillis = HAL_GetTick();
+        cMillis = HAL_GetTick();
+        while (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)) && pMillis + 2 > cMillis) {
+            cMillis = HAL_GetTick();
+        }
+        microDelay(40);   // wait for 40 us
+        if (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)))   // if the pin is low
+            b &= ~(1 << (7 - a));
+        else
+            b |= (1 << (7 - a));
+        pMillis = HAL_GetTick();
+        cMillis = HAL_GetTick();
+        while ((HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)) && pMillis + 2 > cMillis) {
+            cMillis = HAL_GetTick();
+        }
     }
-  }
-  return b;
+    return b;
 }
 
 void displayTemperatureOnLCD(Lcd_HandleTypeDef *lcd, float temperatureC, float temperatureF, float humidity) {
     char tempStr[20], humStr[20];
     if (displayMode == DISPLAY_CELSIUS) {
-        sprintf(tempStr, "%.2f\xDF""C", temperatureC); 
+        sprintf(tempStr, "%.2f\xDF""C", temperatureC);
     } else {
-        sprintf(tempStr, "%.2f\xDF""F", temperatureF); 
+        sprintf(tempStr, "%.2f\xDF""F", temperatureF);
     }
     sprintf(humStr, "%.2f%%", humidity);
     Lcd_cursor(lcd, 0, 9); // Dòng 1, cột 9
@@ -194,6 +205,7 @@ void displayTemperatureOnLCD(Lcd_HandleTypeDef *lcd, float temperatureC, float t
     Lcd_cursor(lcd, 1, 9); // Dòng 2, cột 9
     Lcd_string(lcd, humStr); // Hiển thị độ ẩm
 }
+
 void sendDataViaUART(UART_HandleTypeDef *huart, float temperature, float humidity) {
     char charData[50];
     sprintf(charData, "Lan do: %d\r\n", Count++);
@@ -208,18 +220,10 @@ void displayDigit(uint8_t digit, uint8_t position) {
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6, GPIO_PIN_SET);
     GPIOA->ODR = (GPIOA->ODR & 0xFF00) | led_segments[digit];
     switch (position) {
-        case 1:
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
-            break;
-        case 2:
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
-            break;
-        case 3:
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
-            break;
-        case 4:
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
-            break;
+        case 1: HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET); break;
+        case 2: HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET); break;
+        case 3: HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET); break;
+        case 4: HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET); break;
     }
 }
 
@@ -242,17 +246,17 @@ void displayTemperatureOnLED(float temperature) {
 }
 
 void display_dot_on_D3(void) {
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_RESET); 
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_RESET);
 }
 
 void clear_dot_on_D3(void) {
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_SET); 
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_SET);
 }
-
 
 void displayLED(void) {
     displayTemperatureOnLED(tCelsius);  // Hiển thị nhiệt độ lên LED 7 thanh
 }
+
 void readDHT11(void) {
     if (DHT11_Start()) {
         RH1 = DHT11_Read();
@@ -268,33 +272,20 @@ void readDHT11(void) {
         }
     }
 }
-Lcd_HandleTypeDef lcd;
+
 void displayLCD(void) {
     displayTemperatureOnLCD(&lcd, tCelsius, tFahrenheit, RH);
 }
+
 void sendUART(void) {
     sendDataViaUART(&huart1, tCelsius, RH);
 }
-Task tasks[] = {
-    {displayLED, 10, 0, 1, "LED"},      // Tác vụ hiển thị LED 7 thanh, chu kỳ 10 ms, ưu tiên cao nhất
-    {readDHT11, 1000, 0, 2, "DHT11"},   // Tác vụ đọc cảm biến DHT11, chu kỳ 1 giây
-    {displayLCD, 2000, 0, 3, "LCD"},    // Tác vụ hiển thị LCD, chu kỳ 2 giây
-    {sendUART, 5000, 0, 4, "UART"}      // Tác vụ gửi dữ liệu qua UART, chu kỳ 5 giây
-};
 
-#define NUM_TASKS (sizeof(tasks) / sizeof(Task))
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM2) {
-        tick++;  // Tăng bộ đếm thời gian
-        for (uint8_t i = 0; i < NUM_TASKS; i++) {
-            tasks[i].elapsedTime += 1;  // Cập nhật thời gian đã trôi qua cho mỗi tác vụ
-        }
-    }
-}
 void processCommand(char* command) {
-	  char taskName[10];
+    char taskName[10];
     uint32_t newPeriod;
-		if (sscanf(command, "SET_PERIOD %s %lu", taskName, &newPeriod) == 2) {
+
+    if (sscanf(command, "SET_PERIOD %s %lu", taskName, &newPeriod) == 2) {
         // Tìm task tương ứng và cập nhật chu kỳ
         for (uint8_t i = 0; i < NUM_TASKS; i++) {
             if (strcmp(taskName, tasks[i].name) == 0) {
@@ -305,9 +296,8 @@ void processCommand(char* command) {
                 break;
             }
         }
-			}
-    else if (strncmp(command, "SET_DISPLAY ", 12) == 0) { // Lệnh SET_DISPLAY: Thay đổi chế độ hiển thị       
-        char* mode = command + 12; // Bỏ qua "SET_DISPLAY "
+    } else if (strncmp(command, "SET_DISPLAY ", 12) == 0) {
+        char* mode = command + 12;
         if (strcmp(mode, "C") == 0) {
             displayMode = DISPLAY_CELSIUS;
             HAL_UART_Transmit(&huart1, (uint8_t*)"Display mode set to Celsius\r\n", 29, HAL_MAX_DELAY);
@@ -317,11 +307,33 @@ void processCommand(char* command) {
         } else {
             HAL_UART_Transmit(&huart1, (uint8_t*)"Invalid display mode\r\n", 22, HAL_MAX_DELAY);
         }
-    } 
-		else {
+    } else if (strcmp(command, "ON") == 0) {
+        systemState = STATE_ON;
+        HAL_UART_Transmit(&huart1, (uint8_t*)"System is ON\r\n", 14, HAL_MAX_DELAY);
+    } else if (strcmp(command, "OFF") == 0) {
+        systemState = STATE_OFF;
+        HAL_UART_Transmit(&huart1, (uint8_t*)"System is OFF\r\n", 15, HAL_MAX_DELAY);
+    } else if (strcmp(command, "START") == 0) {
+        if (systemState == STATE_OFF) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)"Cannot START, system is OFF\r\n", 29, HAL_MAX_DELAY);
+        } else {
+            systemState = STATE_START;
+            HAL_UART_Transmit(&huart1, (uint8_t*)"System STARTED\r\n", 16, HAL_MAX_DELAY);
+        }
+    } else if (strcmp(command, "RESTART") == 0) {
+        systemState = STATE_RESTART;
+        HAL_UART_Transmit(&huart1, (uint8_t*)"System RESTARTED\r\n", 18, HAL_MAX_DELAY);
+    } else if (strcmp(command, "STOP") == 0) {
+        if (systemState == STATE_OFF) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)"Cannot STOP, system is OFF\r\n", 28, HAL_MAX_DELAY);
+        } else {
+            systemState = STATE_STOP;
+            HAL_UART_Transmit(&huart1, (uint8_t*)"System STOPPED\r\n", 16, HAL_MAX_DELAY);
+        }
+    } else {
         // Lệnh không hợp lệ
         HAL_UART_Transmit(&huart1, (uint8_t*)"Invalid command\r\n", 17, HAL_MAX_DELAY);
-				}
+    }
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
@@ -335,14 +347,44 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
         } else {
             rx_index = 0; // Reset chỉ số buffer nếu buffer đầy
         }
-        HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+        HAL_UART_Receive_IT(&huart1, &rx_data, 1); // Tiếp tục nhận dữ liệu
     }
 }
+
 void scheduleTasks(void) {
+    if (systemState != STATE_START) {
+        return; // Chỉ thực hiện các tác vụ khi hệ thống ở trạng thái START
+    }
+
+    Task *nextTask = NULL;
+    uint32_t minDeadline = UINT32_MAX;
+
     for (uint8_t i = 0; i < NUM_TASKS; i++) {
         if (tasks[i].elapsedTime >= tasks[i].period) {
-            tasks[i].task();  // Thực hiện tác vụ
-            tasks[i].elapsedTime = 0;  // Reset thời gian đã trôi qua
+            if (tick > tasks[i].deadline) {
+                // Task bị trễ deadline, xử lý lỗi
+                // Ví dụ: ghi log, thực thi task ngay lập tức
+            }
+            tasks[i].deadline = tick + tasks[i].period;
+            tasks[i].elapsedTime = 0;
+
+            if (tasks[i].deadline < minDeadline) {
+                minDeadline = tasks[i].deadline;
+                nextTask = &tasks[i];
+            }
+        }
+    }
+
+    if (nextTask != NULL) {
+        nextTask->task();
+    }
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM2) {
+        tick++;  // Tăng bộ đếm thời gian
+        for (uint8_t i = 0; i < NUM_TASKS; i++) {
+            tasks[i].elapsedTime += 1;  // Cập nhật thời gian đã trôi qua cho mỗi tác vụ
         }
     }
 }
@@ -352,61 +394,59 @@ void scheduleTasks(void) {
   * @brief  The application entry point.
   * @retval int
   */
-int main(void)
-{
+int main(void) {
+    /* MCU Configuration--------------------------------------------------------*/
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_TIM4_Init();
+    MX_USART1_UART_Init();
+    MX_TIM2_Init();
 
-  /* USER CODE BEGIN 1 */
+    /* USER CODE BEGIN 2 */
+    HAL_TIM_Base_Start(&htim4);
+    HAL_TIM_Base_Start_IT(&htim2);
 
-  /* USER CODE END 1 */
+    Lcd_PortType ports[] = { GPIOB, GPIOB, GPIOB, GPIOB };
+    Lcd_PinType pins[] = { GPIO_PIN_12, GPIO_PIN_13, GPIO_PIN_14, GPIO_PIN_15 };
+    lcd = Lcd_create(ports, pins, GPIOA, GPIO_PIN_12, GPIOA, GPIO_PIN_11, LCD_4_BIT_MODE);
+    Lcd_cursor(&lcd, 0, 0);
+    Lcd_string(&lcd, "Nhiet do:");
+    HAL_Delay(100);
+    Lcd_cursor(&lcd, 1, 0);
+    Lcd_string(&lcd, "Do am:");
 
-  /* MCU Configuration--------------------------------------------------------*/
+    HAL_UART_Receive_IT(&huart1, &rx_data, 1); // Bật ngắt nhận UART
+    /* USER CODE END 2 */
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    /* Infinite loop */
+    while (1) {
+        switch (systemState) {
+            case STATE_OFF:
+                // Không làm gì
+                break;
+            case STATE_ON:
+                systemState = STATE_START; // Tự động chuyển sang STATE_START
+                break;
+            case STATE_START:
+                scheduleTasks(); // Lập lịch và thực hiện các tác vụ
+                break;
+            case STATE_RESTART:
+                Count = 1;
+                systemState = STATE_START;
+                break;
+            case STATE_STOP:
+                // Dừng các tác vụ và chờ lệnh tiếp theo
+                while (systemState == STATE_STOP) {
+                    HAL_Delay(100); // Chờ
+                }
+                break;
+        }
+        HAL_Delay(1); // Đợi 1ms
+    }
+}
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_TIM4_Init();
-  MX_USART1_UART_Init();
-  MX_TIM2_Init();
-  /* USER CODE BEGIN 2 */
-	HAL_TIM_Base_Start(&htim4);
-	HAL_TIM_Base_Start_IT(&htim2);
-	
-  Lcd_PortType ports[] = { GPIOB, GPIOB, GPIOB, GPIOB };
-  
-  Lcd_PinType pins[] = {GPIO_PIN_12, GPIO_PIN_13, GPIO_PIN_14, GPIO_PIN_15}; // Lcd_PinType pins[] = {D4_Pin, D5_Pin, D6_Pin, D7_Pin};
- 
-  // Lcd_create(ports, pins, RS_GPIO_Port, RS_Pin, EN_GPIO_Port, EN_Pin, LCD_4_BIT_MODE);
-  lcd = Lcd_create(ports, pins, GPIOA, GPIO_PIN_12, GPIOA, GPIO_PIN_11, LCD_4_BIT_MODE);
-  Lcd_cursor(&lcd, 0,0);
-  Lcd_string(&lcd, "Nhiet do:");
-	HAL_Delay(100);		
-	Lcd_cursor(&lcd, 1,0);
-  Lcd_string(&lcd, "Do am:");
-		
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1) {
-    scheduleTasks();  // Lập lịch và thực hiện các tác vụ
-    HAL_Delay(1);     // Đợi 1ms
-	}
-
-}			
+/* Các hàm cấu hình hệ thống (SystemClock_Config, MX_GPIO_Init, MX_TIM4_Init, MX_USART1_UART_Init, MX_TIM2_Init) */	
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

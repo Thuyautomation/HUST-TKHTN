@@ -27,18 +27,18 @@ Project File Date:  01/23/2025
 <h2>Output:</h2>
 *** Using Compiler 'V6.19', folder: 'C:\Keil_v5\ARM\ARMCLANG\Bin'
 Build target 'TEST'
-../Core/Src/main.c(297): warning: format specifies type 'unsigned long *' but the argument has type 'uint32_t *' (aka 'unsigned int *') [-Wformat]
-                if (sscanf(command, "SET_PERIOD %s %lu", taskName, &newPeriod) == 2) {
-                                                   ~~~             ^~~~~~~~~~
-                                                   %u
-../Core/Src/main.c(303): warning: format specifies type 'unsigned long' but the argument has type 'uint32_t' (aka 'unsigned int') [-Wformat]
+../Core/Src/main.c(288): warning: format specifies type 'unsigned long *' but the argument has type 'uint32_t *' (aka 'unsigned int *') [-Wformat]
+    if (sscanf(command, "SET_PERIOD %s %lu", taskName, &newPeriod) == 2) {
+                                       ~~~             ^~~~~~~~~~
+                                       %u
+../Core/Src/main.c(294): warning: format specifies type 'unsigned long' but the argument has type 'uint32_t' (aka 'unsigned int') [-Wformat]
                 sprintf(response, "%s period updated to %lu ms\r\n", tasks[i].name, newPeriod);
                                                         ~~~                         ^~~~~~~~~
                                                         %u
 2 warnings generated.
 compiling main.c...
 linking...
-Program Size: Code=19722 RO-data=890 RW-data=104 ZI-data=2016  
+Program Size: Code=20214 RO-data=1054 RW-data=120 ZI-data=2016  
 FromELF: creating hex file...
 "TEST\TEST.axf" - 0 Error(s), 2 Warning(s).
 

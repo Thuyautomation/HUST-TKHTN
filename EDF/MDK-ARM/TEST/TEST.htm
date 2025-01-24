@@ -3,7 +3,7 @@
 <title>Static Call Graph - [TEST\TEST.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image TEST\TEST.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6190004: Last Updated: Fri Jan 24 07:01:21 2025
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6190004: Last Updated: Fri Jan 24 08:47:56 2025
 <BR><P>
 <H3>Maximum Stack Usage =        356 bytes + Unknown(Functions without stacksize, Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -452,8 +452,8 @@ Global Symbols
 <LI><a href="#[63]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_printf_char_common
 </UL>
 <BR>[Called By]<UL><LI><a href="#[a7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;processCommand
-<LI><a href="#[41]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;displayLCD
 <LI><a href="#[c0]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sendDataViaUART
+<LI><a href="#[41]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;displayLCD
 </UL>
 
 <P><STRONG><a name="[65]"></a>_printf_pre_padding</STRONG> (Thumb, 44 bytes, Stack size 16 bytes, _printf_pad.o(.text))
@@ -795,8 +795,8 @@ Global Symbols
 
 <P><STRONG><a name="[86]"></a>HAL_GPIO_WritePin</STRONG> (Thumb, 10 bytes, Stack size 0 bytes, stm32f1xx_hal_gpio.o(.text.HAL_GPIO_WritePin))
 <BR><BR>[Called By]<UL><LI><a href="#[5c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
-<LI><a href="#[b2]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;displayTemperatureOnLED
 <LI><a href="#[84]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DHT11_Start
+<LI><a href="#[b2]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;displayTemperatureOnLED
 <LI><a href="#[ae]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;lcd_write_data
 <LI><a href="#[ab]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;lcd_write_command
 </UL>
@@ -1151,7 +1151,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[3f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;displayLED
 </UL>
 
-<P><STRONG><a name="[5c]"></a>main</STRONG> (Thumb, 824 bytes, Stack size 88 bytes, main.o(.text.main))
+<P><STRONG><a name="[5c]"></a>main</STRONG> (Thumb, 960 bytes, Stack size 88 bytes, main.o(.text.main))
 <BR><BR>[Stack]<UL><LI>Max Depth = 180<LI>Call Chain = main &rArr; HAL_UART_Init &rArr; HAL_UART_MspInit &rArr; HAL_GPIO_Init
 </UL>
 <BR>[Calls]<UL><LI><a href="#[ba]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_TIM_Base_Start_IT
@@ -1174,7 +1174,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[5b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__rt_entry_main
 </UL>
 
-<P><STRONG><a name="[a7]"></a>processCommand</STRONG> (Thumb, 328 bytes, Stack size 88 bytes, main.o(.text.processCommand))
+<P><STRONG><a name="[a7]"></a>processCommand</STRONG> (Thumb, 672 bytes, Stack size 88 bytes, main.o(.text.processCommand))
 <BR><BR>[Stack]<UL><LI>Max Depth = 312 + Unknown Stack Size
 <LI>Call Chain = processCommand &rArr; __0sscanf &rArr; __vfscanf_char &rArr; __vfscanf &rArr; _scanf_string
 </UL>
@@ -1309,8 +1309,8 @@ Global Symbols
 <P><STRONG><a name="[b1]"></a>__aeabi_f2d</STRONG> (Thumb, 0 bytes, Stack size 16 bytes, f2d.o(x$fpl$f2d))
 <BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = __aeabi_f2d
 </UL>
-<BR>[Called By]<UL><LI><a href="#[41]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;displayLCD
-<LI><a href="#[c0]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sendDataViaUART
+<BR>[Called By]<UL><LI><a href="#[c0]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sendDataViaUART
+<LI><a href="#[41]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;displayLCD
 </UL>
 
 <P><STRONG><a name="[c6]"></a>_f2d</STRONG> (Thumb, 86 bytes, Stack size 16 bytes, f2d.o(x$fpl$f2d), UNUSED)
